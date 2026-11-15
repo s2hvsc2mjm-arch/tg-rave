@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Смотрим вместе</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
   <style>
     :root {
       --bg: #0f0f12;
@@ -17,80 +18,59 @@
       --accent-hover: #2563eb;
       --green: #16a34a;
       --red: #dc2626;
+      --gold: #eab308;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    html, body { height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+    html, body { height: 100dvh; background: var(--bg); color: var(--text); overflow: hidden; }
 
-    /* Основной контейнер: на телефоне колонка, на ПК — плеер слева, чат справа */
-    .app {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      width: 100%;
-    }
+    .app { display: flex; flex-direction: column; height: 100dvh; width: 100%; }
+    @media (min-width: 860px) { .app { flex-direction: row; } }
 
-    @media (min-width: 820px) {
-      .app { flex-direction: row; }
-    }
-
-    /* Левая / верхняя часть: видео + панель управления */
-    .main-col {
-      display: flex;
-      flex-direction: column;
-      background: #000;
-      flex-shrink: 0;
-    }
-
-    @media (min-width: 820px) {
-      .main-col {
-        flex: 1;
-        height: 100%;
-        min-width: 0;
-      }
-    }
+    /* Левая / верхняя колонка */
+    .main-col { display: flex; flex-direction: column; background: #000; flex-shrink: 0; }
+    @media (min-width: 860px) { .main-col { flex: 1; height: 100%; min-width: 0; } }
 
     .video-wrap {
+      position: relative;
       width: 100%;
       background: #000;
       display: flex;
       align-items: center;
       justify-content: center;
+      aspect-ratio: 16 / 9;
+      max-height: 44vh;
+    }
+    @media (min-width: 860px) {
+      .video-wrap { flex: 1; max-height: none; aspect-ratio: auto; min-height: 0; }
     }
 
-    video {
+    .media-el {
       width: 100%;
-      max-height: 42vh;
-      display: block;
+      height: 100%;
+      border: none;
       background: #000;
+      display: none;
     }
+    .media-el.active { display: block; }
 
-    @media (min-width: 820px) {
-      .video-wrap { flex: 1; min-height: 0; }
-      video { max-height: 100%; height: 100%; }
-    }
-
-    /* Тулбар под видео */
+    /* Панель управления */
     .toolbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      padding: 10px 12px;
+      gap: 6px;
+      padding: 8px 10px;
       background: var(--panel);
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
       flex-wrap: wrap;
     }
 
-    .status-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+    .status-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
     .badge {
-      padding: 4px 10px;
+      padding: 4px 9px;
       border-radius: 99px;
       font-size: 12px;
       font-weight: 600;
@@ -98,15 +78,12 @@
       color: var(--hint);
       white-space: nowrap;
     }
-
-    .badge.online {
-      background: var(--green);
-      color: #fff;
-    }
+    .badge.online { background: var(--green); color: #fff; }
+    .badge.admin { background: rgba(234, 179, 8, 0.18); color: var(--gold); border: 1px solid rgba(234, 179, 8, 0.4); }
 
     .name-input {
-      width: 110px;
-      padding: 5px 8px;
+      width: 105px;
+      padding: 4px 8px;
       border-radius: 6px;
       border: 1px solid var(--border);
       background: var(--bg);
@@ -114,30 +91,28 @@
       font-size: 13px;
     }
 
-    .tool-btns {
-      display: flex;
-      gap: 6px;
-    }
+    .tool-btns { display: flex; gap: 5px; flex-wrap: wrap; }
 
     button {
-      padding: 7px 12px;
-      border-radius: 8px;
+      padding: 6px 10px;
+      border-radius: 7px;
       border: none;
       background: var(--accent);
       color: #fff;
       font-weight: 600;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
       white-space: nowrap;
-      transition: background 0.15s;
+      transition: background 0.15s, opacity 0.15s;
     }
-
     button:hover { background: var(--accent-hover); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
     button.secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
     button.secondary:hover { background: #2c2c34; }
-    button.mic-on { background: var(--red); border-color: var(--red); }
+    button.active-red { background: var(--red); border-color: var(--red); color: #fff; }
+    button.active-gold { background: rgba(234, 179, 8, 0.2); border: 1px solid var(--gold); color: var(--gold); }
 
-    /* Панель ссылки и входа */
+    /* Выдвижная панель источников */
     #setupPanel {
       background: var(--panel);
       padding: 10px 12px;
@@ -146,48 +121,43 @@
       gap: 8px;
       border-bottom: 1px solid var(--border);
     }
-
     #setupPanel.hidden { display: none; }
 
-    .row {
-      display: flex;
-      gap: 8px;
-    }
-
+    .row { display: flex; gap: 6px; }
     input[type="text"] {
       flex: 1;
-      padding: 9px 12px;
+      padding: 8px 11px;
       border-radius: 8px;
       border: 1px solid var(--border);
       background: var(--bg);
       color: var(--text);
-      font-size: 15px;
+      font-size: 14px;
       min-width: 0;
     }
+    input:focus { outline: none; border-color: var(--accent); }
 
-    input:focus {
-      outline: none;
-      border-color: var(--accent);
+    .hint-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--hint);
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
-    /* Правая / нижняя часть: чат */
+    /* Правая / нижняя колонка: чат */
     .chat-col {
       flex: 1;
       display: flex;
       flex-direction: column;
       min-height: 0;
       background: var(--panel);
-      padding: 10px;
+      padding: 8px 10px;
       gap: 8px;
     }
-
-    @media (min-width: 820px) {
-      .chat-col {
-        width: 360px;
-        flex: none;
-        height: 100%;
-        border-left: 1px solid var(--border);
-      }
+    @media (min-width: 860px) {
+      .chat-col { width: 350px; flex: none; height: 100%; border-left: 1px solid var(--border); }
     }
 
     #chatBox {
@@ -201,94 +171,81 @@
     }
 
     .msg {
-      padding: 8px 12px;
+      padding: 7px 11px;
       border-radius: 12px;
       background: var(--card);
       align-self: flex-start;
       max-width: 85%;
       font-size: 14px;
-      line-height: 1.4;
+      line-height: 1.38;
       word-wrap: break-word;
     }
-
-    .msg.me {
-      background: var(--accent);
-      color: #fff;
-      align-self: flex-end;
-    }
-
+    .msg.me { background: var(--accent); color: #fff; align-self: flex-end; }
     .msg.sys {
       background: transparent;
       color: var(--hint);
       font-size: 12px;
       align-self: center;
       text-align: center;
-      padding: 3px 6px;
+      padding: 2px 6px;
     }
+    .msg-author { font-size: 11px; opacity: 0.78; margin-bottom: 2px; font-weight: 600; }
 
-    .msg-author {
-      font-size: 11px;
-      opacity: 0.75;
-      margin-bottom: 2px;
-      font-weight: 600;
-    }
-
-    .reactions {
-      display: flex;
-      gap: 6px;
-      flex-shrink: 0;
-    }
-
+    .reactions { display: flex; gap: 6px; flex-shrink: 0; }
     .react-btn {
       background: var(--card);
       border: 1px solid var(--border);
-      padding: 6px;
+      padding: 5px;
       font-size: 16px;
       border-radius: 8px;
       flex: 1;
     }
 
-    .chat-input-row {
-      display: flex;
-      gap: 6px;
-      flex-shrink: 0;
-    }
+    .chat-input-row { display: flex; gap: 6px; flex-shrink: 0; }
   </style>
 </head>
 <body>
 
   <div class="app">
-    <!-- Плеер и управление -->
     <div class="main-col">
       <div class="video-wrap">
-        <video id="player" controls playsinline webkit-playsinline></video>
+        <video id="htmlPlayer" class="media-el active" controls playsinline webkit-playsinline></video>
+        <div id="ytContainer" class="media-el"></div>
+        <iframe id="embedPlayer" class="media-el" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
       </div>
 
       <div class="toolbar">
         <div class="status-group">
-          <span id="connBadge" class="badge">Ожидание партнёра</span>
+          <span id="connBadge" class="badge">Ожидание</span>
+          <span id="roleBadge" class="badge">Гость</span>
           <input id="nameInput" class="name-input" placeholder="Твоё имя" maxlength="20" />
         </div>
         <div class="tool-btns">
           <button id="inviteBtn">Пригласить</button>
+          <button id="screenBtn" class="secondary admin-only" title="Транслировать вкладку браузера со звуком">🖥 Стрим вкладки</button>
+          <button id="syncBtn" class="secondary admin-only" title="Принудительно синхронизировать партнёра">🔄 Синхр.</button>
+          <button id="lockBtn" class="secondary admin-only" title="Запретить гостям перематывать">🔒 Только админ</button>
           <button id="micBtn" class="secondary">🎙 Голос</button>
-          <button id="toggleSetupBtn" class="secondary">⚙️ Ссылка</button>
+          <button id="toggleSetupBtn" class="secondary">⚙️</button>
         </div>
       </div>
 
       <div id="setupPanel">
         <div class="row">
-          <input id="urlInput" type="text" placeholder="Вставь ссылку на видео с Google Диска..." />
+          <input id="urlInput" type="text" placeholder="Ссылка: YouTube, Google Диск, .mp4, .m3u8, VK..." />
           <button id="loadBtn">Включить</button>
         </div>
+        <div class="hint-bar">
+          <span>Поддерживается: YouTube, Google Диск, прямые .mp4/.m3u8, VK Видео</span>
+          <button id="driveFallbackBtn" class="secondary" style="display:none; padding: 3px 8px; font-size: 11px;">Резервный плеер Google (для .mkv)</button>
+        </div>
         <div class="row">
-          <input id="joinInput" type="text" placeholder="Или вставь код комнаты друга..." />
+          <input id="joinInput" type="text" placeholder="Код комнаты друга (если заходишь без ссылки)..." />
           <button id="joinBtn" class="secondary">Войти</button>
         </div>
       </div>
     </div>
 
-    <!-- Чат -->
     <div class="chat-col">
       <div id="chatBox"></div>
       <div class="reactions">
@@ -310,36 +267,96 @@
   <script>
     const GOOGLE_API_KEY = "AIzaSyBcV_OlMU2CpZ1WO9n_bPF_j7CytgrZSuU";
 
+    // === ПАМЯТЬ УСТРОЙСТВА ===
+    const STORAGE = {
+      get(key, fallback = null) {
+        try {
+          const val = localStorage.getItem(key);
+          return val !== null ? JSON.parse(val) : fallback;
+        } catch { return fallback; }
+      },
+      set(key, val) {
+        try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+      }
+    };
+
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromUrl = urlParams.get("room")?.trim() || "";
 
-    const player = document.getElementById("player");
+    // DOM элементы
+    const htmlPlayer = document.getElementById("htmlPlayer");
+    const ytContainer = document.getElementById("ytContainer");
+    const embedPlayer = document.getElementById("embedPlayer");
     const connBadge = document.getElementById("connBadge");
-    const urlInput = document.getElementById("urlInput");
-    const chatBox = document.getElementById("chatBox");
-    const chatInput = document.getElementById("chatInput");
-    const setupPanel = document.getElementById("setupPanel");
-    const micBtn = document.getElementById("micBtn");
-    const remoteAudio = document.getElementById("remoteAudio");
+    const roleBadge = document.getElementById("roleBadge");
     const nameInput = document.getElementById("nameInput");
     const inviteBtn = document.getElementById("inviteBtn");
+    const screenBtn = document.getElementById("screenBtn");
+    const syncBtn = document.getElementById("syncBtn");
+    const lockBtn = document.getElementById("lockBtn");
+    const micBtn = document.getElementById("micBtn");
+    const setupPanel = document.getElementById("setupPanel");
+    const urlInput = document.getElementById("urlInput");
+    const loadBtn = document.getElementById("loadBtn");
+    const driveFallbackBtn = document.getElementById("driveFallbackBtn");
+    const chatBox = document.getElementById("chatBox");
+    const chatInput = document.getElementById("chatInput");
+    const remoteAudio = document.getElementById("remoteAudio");
 
-    nameInput.value = localStorage.getItem("cinema_username") || "";
-    nameInput.addEventListener("input", () => {
-      localStorage.setItem("cinema_username", nameInput.value.trim());
-    });
+    // Восстановление имени и прав админа
+    nameInput.value = STORAGE.get("cinema_name", "");
+    nameInput.addEventListener("input", () => STORAGE.set("cinema_name", nameInput.value.trim()));
 
-    function getMyName() {
-      return nameInput.value.trim() || (isHost ? "Хост" : "Гость");
+    const ownedRooms = STORAGE.get("cinema_owned_rooms", {});
+    let currentRoomId = roomFromUrl || ("kino-" + Math.random().toString(36).substring(2, 8));
+
+    // Если комнаты нет в URL, мы её создаём и запоминаем за этим устройством
+    if (!roomFromUrl) {
+      ownedRooms[currentRoomId] = true;
+      STORAGE.set("cinema_owned_rooms", ownedRooms);
+      window.history.replaceState({}, "", `?room=${currentRoomId}`);
     }
 
+    let isAdmin = Boolean(ownedRooms[currentRoomId]);
+    let adminLocked = true;
+
+    // Состояние плеера
+    let activeMode = "html5"; // 'html5' | 'youtube' | 'embed' | 'screen'
+    let currentRawUrl = STORAGE.get("cinema_last_url", "");
+    if (currentRawUrl) urlInput.value = currentRawUrl;
+    let lastDriveFileId = "";
+
+    let hlsInstance = null;
+    let ytPlayer = null;
+    let ytReady = false;
+    let pendingYtLoad = null;
+    let lastYtTime = 0;
+
+    // Сеть (PeerJS)
     let peer = null;
-    let conn = null;
-    let localStream = null;
-    let isHost = !roomFromUrl;
-    let currentRoomId = roomFromUrl || ("kino-" + Math.random().toString(36).substring(2, 8));
+    const connections = new Map();
+    let voiceStream = null;
+    let screenStream = null;
     let isRemoteAction = false;
-    let currentRawUrl = "";
+
+    function getMyName() {
+      return nameInput.value.trim() || (isAdmin ? "Админ" : "Гость");
+    }
+
+    function updateRoleUI() {
+      if (isAdmin) {
+        roleBadge.textContent = "👑 Админ";
+        roleBadge.classList.add("admin");
+        document.querySelectorAll(".admin-only").forEach(el => el.style.display = "");
+      } else {
+        roleBadge.textContent = "Гость";
+        roleBadge.classList.remove("admin");
+        document.querySelectorAll(".admin-only").forEach(el => el.style.display = "none");
+      }
+      lockBtn.textContent = adminLocked ? "🔒 Только админ" : "🔓 Все управляют";
+      lockBtn.classList.toggle("active-gold", adminLocked);
+    }
+    updateRoleUI();
 
     function addChatMessage(sender, text, type = "other") {
       const div = document.createElement("div");
@@ -362,102 +379,338 @@
       chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    function parseDriveUrl(input) {
-      const clean = input.trim();
-      const match = clean.match(/(?:\/d\/|id=)([a-zA-Z0-9_-]{20,})/);
-      if (match && match[1]) {
-        return `https://www.googleapis.com/drive/v3/files/${match[1]}?alt=media&acknowledgeAbuse=true&key=${GOOGLE_API_KEY}`;
-      }
-      return clean;
-    }
-
-    function safePlay() {
-      player.play().catch(() => {
-        addChatMessage("", "Браузер заблокировал автозапуск — нажми Play на плеере один раз", "sys");
+    function broadcast(payload) {
+      connections.forEach(c => {
+        if (c.open) c.send(payload);
       });
     }
 
-    async function loadVideo(rawUrl, startTime = 0, shouldPlay = false) {
+    function updateConnBadge() {
+      const count = Array.from(connections.values()).filter(c => c.open).length;
+      if (count > 0) {
+        connBadge.textContent = count === 1 ? "Вместе онлайн" : `Онлайн: ${count + 1}`;
+        connBadge.classList.add("online");
+      } else {
+        connBadge.textContent = "Ожидание партнёра";
+        connBadge.classList.remove("online");
+      }
+    }
+
+    // === ПЕРЕКЛЮЧЕНИЕ ТИПОВ ПЛЕЕРА ===
+    function switchPlayerMode(mode) {
+      activeMode = mode;
+      htmlPlayer.classList.toggle("active", mode === "html5" || mode === "screen");
+      ytContainer.classList.toggle("active", mode === "youtube");
+      embedPlayer.classList.toggle("active", mode === "embed");
+
+      if (mode !== "html5" && mode !== "screen") {
+        htmlPlayer.pause();
+        htmlPlayer.srcObject = null;
+        htmlPlayer.removeAttribute("src");
+      }
+      if (mode !== "youtube" && ytPlayer && ytReady) {
+        ytPlayer.pauseVideo();
+      }
+      if (mode !== "embed") {
+        embedPlayer.src = "about:blank";
+      }
+    }
+
+    // === YOUTUBE API ===
+    const ytScript = document.createElement("script");
+    ytScript.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(ytScript);
+
+    window.onYouTubeIframeAPIReady = () => {
+      ytPlayer = new YT.Player("ytContainer", {
+        width: "100%",
+        height: "100%",
+        playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
+        events: {
+          onReady: () => {
+            ytReady = true;
+            if (pendingYtLoad) {
+              const { id, time, play } = pendingYtLoad;
+              pendingYtLoad = null;
+              loadYouTubeVideo(id, time, play);
+            }
+          },
+          onStateChange: (e) => {
+            if (isRemoteAction || activeMode !== "youtube") return;
+            if (!isAdmin && adminLocked) {
+              // Возвращаем гостя обратно если управление заблокировано
+              if (e.data === YT.PlayerState.PLAYING) ytPlayer.pauseVideo();
+              return;
+            }
+            const t = ytPlayer.getCurrentTime();
+            if (e.data === YT.PlayerState.PLAYING) {
+              broadcast({ type: "action", action: "play", time: t });
+            } else if (e.data === YT.PlayerState.PAUSED) {
+              broadcast({ type: "action", action: "pause", time: t });
+            }
+          }
+        }
+      });
+    };
+
+    function loadYouTubeVideo(videoId, startTime = 0, shouldPlay = false) {
+      switchPlayerMode("youtube");
+      if (!ytReady) {
+        pendingYtLoad = { id: videoId, time: startTime, play: shouldPlay };
+        return;
+      }
+      isRemoteAction = true;
+      ytPlayer.loadVideoById({ videoId, startSeconds: startTime });
+      if (!shouldPlay) {
+        setTimeout(() => ytPlayer.pauseVideo(), 350);
+      }
+      lastYtTime = startTime;
+      setTimeout(() => { isRemoteAction = false; }, 700);
+    }
+
+    // Отслеживание перемотки в YouTube
+    setInterval(() => {
+      if (activeMode === "youtube" && ytReady && !isRemoteAction) {
+        const cur = ytPlayer.getCurrentTime?.() || 0;
+        if (Math.abs(cur - lastYtTime) > 1.8) {
+          if (isAdmin || !adminLocked) {
+            broadcast({ type: "action", action: "seek", time: cur });
+          }
+        }
+        lastYtTime = cur;
+      }
+    }, 600);
+
+    // === РАЗБОР ССЫЛОК (YOUTUBE, GOOGLE DRIVE, ВК, ПРЯМЫЕ) ===
+    function detectSource(raw) {
+      const clean = raw.trim();
+
+      // YouTube
+      const ytMatch = clean.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (ytMatch) return { type: "youtube", id: ytMatch[1] };
+
+      // Google Drive
+      const driveMatch = clean.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]{20,})/);
+      if (driveMatch) return { type: "gdrive", id: driveMatch[1] };
+
+      // VK Video
+      const vkMatch = clean.match(/vk\.(?:com|ru)\/video(-?\d+)_(\d+)/);
+      if (vkMatch) return { type: "embed", url: `https://vk.com/video_ext.php?oid=${vkMatch[1]}&id=${vkMatch[2]}&hd=2` };
+
+      // Rutube
+      const rtMatch = clean.match(/rutube\.ru\/video\/([a-zA-Z0-9]+)/);
+      if (rtMatch) return { type: "embed", url: `https://rutube.ru/play/embed/${rtMatch[1]}` };
+
+      // Прямой поток (.mp4 / .m3u8 / .webm)
+      return { type: "direct", url: clean };
+    }
+
+    function safeHtmlPlay() {
+      htmlPlayer.play().catch(() => {
+        addChatMessage("", "Нажми Play на плеере один раз (браузер ждёт подтверждения звука)", "sys");
+      });
+    }
+
+    function attachHtmlStream(streamUrl, startTime = 0, shouldPlay = false) {
+      switchPlayerMode("html5");
+      htmlPlayer.srcObject = null;
+      if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+
+      isRemoteAction = true;
+      if (streamUrl.includes(".m3u8") && window.Hls && Hls.isSupported()) {
+        hlsInstance = new Hls();
+        hlsInstance.loadSource(streamUrl);
+        hlsInstance.attachMedia(htmlPlayer);
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+          htmlPlayer.currentTime = startTime;
+          if (shouldPlay) safeHtmlPlay();
+        });
+      } else {
+        htmlPlayer.src = streamUrl;
+        htmlPlayer.currentTime = startTime;
+        if (shouldPlay) safeHtmlPlay();
+      }
+      setTimeout(() => { isRemoteAction = false; }, 600);
+    }
+
+    async function loadSource(rawUrl, startTime = 0, shouldPlay = false) {
       if (!rawUrl) return;
       currentRawUrl = rawUrl;
       urlInput.value = rawUrl;
+      STORAGE.set("cinema_last_url", rawUrl);
+      driveFallbackBtn.style.display = "none";
 
-      const streamUrl = parseDriveUrl(rawUrl);
-      addChatMessage("", "Проверяю и загружаю видео...", "sys");
+      const src = detectSource(rawUrl);
 
-      try {
-        const check = await fetch(streamUrl, {
-          method: "GET",
-          headers: { Range: "bytes=0-1" }
-        });
-        if (!check.ok) {
-          let details = "";
-          try {
-            const errJson = await check.json();
-            details = errJson.error?.message ? ` (${errJson.error.message})` : "";
-          } catch (_) {}
-          addChatMessage("", `Ошибка Google Диска [${check.status}]${details}: проверь доступ «Все, у кого есть ссылка»`, "sys");
-          return;
-        }
-      } catch (e) {
-        addChatMessage("", "Пробую открыть видео напрямую...", "sys");
+      if (src.type === "youtube") {
+        addChatMessage("", "Загружаю видео с YouTube...", "sys");
+        loadYouTubeVideo(src.id, startTime, shouldPlay);
+        return;
       }
 
+      if (src.type === "embed") {
+        switchPlayerMode("embed");
+        embedPlayer.src = src.url;
+        addChatMessage("", "Открыт встроенный плеер (пауза/перемотка в этом режиме вручную)", "sys");
+        return;
+      }
+
+      if (src.type === "gdrive") {
+        lastDriveFileId = src.id;
+        driveFallbackBtn.style.display = "inline-block";
+        addChatMessage("", "Проверяю файл на Google Диске...", "sys");
+
+        try {
+          const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${src.id}?fields=name,mimeType,size&key=${GOOGLE_API_KEY}`);
+          if (!metaRes.ok) {
+            const err = await metaRes.json().catch(() => ({}));
+            const msg = err.error?.message || `код ${metaRes.status}`;
+            addChatMessage("", `Google Диск не отдал файл (${msg}). Убедись, что включён доступ «Все, у кого есть ссылка»`, "sys");
+            return;
+          }
+          const meta = await metaRes.json();
+          if (meta.name && meta.name.toLowerCase().endsWith(".mkv")) {
+            addChatMessage("", `Файл "${meta.name}" в формате .mkv — если не пойдёт звук или картинка, нажми «Резервный плеер Google»`, "sys");
+          }
+        } catch (e) {
+          addChatMessage("", "Пробую запустить поток с Google Диска...", "sys");
+        }
+
+        const directDriveStream = `https://www.googleapis.com/drive/v3/files/${src.id}?alt=media&acknowledgeAbuse=true&key=${GOOGLE_API_KEY}`;
+        attachHtmlStream(directDriveStream, startTime, shouldPlay);
+        return;
+      }
+
+      // Прямая ссылка
+      attachHtmlStream(src.url, startTime, shouldPlay);
+    }
+
+    driveFallbackBtn.onclick = () => {
+      if (!lastDriveFileId) return;
+      const previewUrl = `https://drive.google.com/file/d/${lastDriveFileId}/preview`;
+      switchPlayerMode("embed");
+      embedPlayer.src = previewUrl;
+      if (isAdmin) broadcast({ type: "force_embed", url: previewUrl });
+      addChatMessage("", "Включён резервный плеер Google Диска", "sys");
+    };
+
+    htmlPlayer.addEventListener("error", () => {
+      if (activeMode !== "html5" || !htmlPlayer.src || htmlPlayer.src === window.location.href) return;
+      addChatMessage("", "Браузер не смог открыть этот поток напрямую. Если это Google Диск — нажми «Резервный плеер Google» в настройках ⚙️", "sys");
+    });
+
+    // === УПРАВЛЕНИЕ И СИНХРОНИЗАЦИЯ ===
+    function getCurrentPlaybackState() {
+      if (activeMode === "youtube" && ytReady) {
+        return {
+          time: ytPlayer.getCurrentTime?.() || 0,
+          paused: ytPlayer.getPlayerState?.() !== YT.PlayerState.PLAYING
+        };
+      }
+      return {
+        time: htmlPlayer.currentTime || 0,
+        paused: htmlPlayer.paused
+      };
+    }
+
+    function applyRemotePlayback(data) {
       isRemoteAction = true;
-      player.src = streamUrl;
-      player.currentTime = startTime;
-      if (shouldPlay) safePlay();
+      if (activeMode === "youtube" && ytReady) {
+        if (Math.abs((ytPlayer.getCurrentTime?.() || 0) - data.time) > 1.0) {
+          ytPlayer.seekTo(data.time, true);
+        }
+        if (data.action === "play") ytPlayer.playVideo();
+        if (data.action === "pause") ytPlayer.pauseVideo();
+      } else if (activeMode === "html5") {
+        if (Math.abs(htmlPlayer.currentTime - data.time) > 0.8) {
+          htmlPlayer.currentTime = data.time;
+        }
+        if (data.action === "play") safeHtmlPlay();
+        if (data.action === "pause") htmlPlayer.pause();
+      }
       setTimeout(() => { isRemoteAction = false; }, 500);
     }
 
-    player.addEventListener("error", () => {
-      if (!player.src || player.src === window.location.href) return;
-      const code = player.error?.code;
-      const reason = code === 4
-        ? "формат видео не поддерживается браузером (нужен .mp4 H.264/AAC, а не .mkv)"
-        : "ошибка загрузки потока";
-      addChatMessage("", `Ошибка плеера (код ${code || "?"}): ${reason}`, "sys");
+    // События HTML5 плеера
+    ["play", "pause", "seeked"].forEach(ev => {
+      htmlPlayer.addEventListener(ev, () => {
+        if (isRemoteAction || activeMode !== "html5") return;
+        if (!isAdmin && adminLocked) {
+          // Гостю запрещено управлять — запрашиваем актуальное время у админа
+          broadcast({ type: "request_sync" });
+          return;
+        }
+        const action = ev === "seeked" ? "seek" : ev;
+        broadcast({ type: "action", action, time: htmlPlayer.currentTime });
+      });
     });
 
-    function setupConnection(connection) {
-      conn = connection;
-      conn.on("open", () => {
-        connBadge.textContent = "Вместе онлайн";
-        connBadge.classList.add("online");
-        addChatMessage("", "Партнёр подключился к комнате", "sys");
+    // Heartbeat от админа каждые 4 секунды
+    setInterval(() => {
+      if (!isAdmin || connections.size === 0) return;
+      if (activeMode === "html5" && !htmlPlayer.paused) {
+        broadcast({ type: "heartbeat", time: htmlPlayer.currentTime, paused: false });
+      } else if (activeMode === "youtube" && ytReady && ytPlayer.getPlayerState?.() === YT.PlayerState.PLAYING) {
+        broadcast({ type: "heartbeat", time: ytPlayer.getCurrentTime(), paused: false });
+      }
+    }, 4000);
 
-        if (isHost && currentRawUrl) {
+    // === СЕТЕВОЕ ПОДКЛЮЧЕНИЕ (PeerJS) ===
+    function setupConnection(conn) {
+      connections.set(conn.peer, conn);
+
+      conn.on("open", () => {
+        updateConnBadge();
+        addChatMessage("", "Участник подключился к комнате", "sys");
+
+        if (isAdmin) {
+          const state = getCurrentPlaybackState();
           conn.send({
             type: "sync_full",
             url: currentRawUrl,
-            time: player.currentTime,
-            paused: player.paused
+            mode: activeMode,
+            time: state.time,
+            paused: state.paused,
+            adminLocked
           });
+          if (screenStream) {
+            peer.call(conn.peer, screenStream, { metadata: { type: "screen" } });
+          }
         }
-
-        if (localStream && conn?.peer) {
-          const call = peer.call(conn.peer, localStream);
-          call.on("stream", (stream) => { remoteAudio.srcObject = stream; });
+        if (voiceStream) {
+          peer.call(conn.peer, voiceStream, { metadata: { type: "voice" } });
         }
       });
 
       conn.on("data", (data) => {
         if (data.type === "load") {
-          loadVideo(data.url, 0, false);
-          addChatMessage("", "Загружено новое видео", "sys");
+          loadSource(data.url, 0, false);
+          addChatMessage("", "Включено новое видео", "sys");
+        } else if (data.type === "force_embed") {
+          switchPlayerMode("embed");
+          embedPlayer.src = data.url;
         } else if (data.type === "sync_full") {
-          loadVideo(data.url, data.time, !data.paused);
+          adminLocked = data.adminLocked;
+          updateRoleUI();
+          if (data.mode === "screen") {
+            switchPlayerMode("screen");
+            addChatMessage("", "Админ транслирует вкладку браузера...", "sys");
+          } else if (data.url) {
+            loadSource(data.url, data.time, !data.paused);
+          }
+        } else if (data.type === "lock_state") {
+          adminLocked = data.adminLocked;
+          updateRoleUI();
+          addChatMessage("", adminLocked ? "Админ заблокировал перемотку для гостей" : "Админ разрешил всем управлять плеером", "sys");
         } else if (data.type === "action") {
-          isRemoteAction = true;
-          if (Math.abs(player.currentTime - data.time) > 0.7) player.currentTime = data.time;
-          if (data.action === "play") safePlay();
-          if (data.action === "pause") player.pause();
-          setTimeout(() => { isRemoteAction = false; }, 400);
-        } else if (data.type === "heartbeat") {
-          if (!player.paused && Math.abs(player.currentTime - data.time) > 1.5) {
-            isRemoteAction = true;
-            player.currentTime = data.time;
-            setTimeout(() => { isRemoteAction = false; }, 400);
+          applyRemotePlayback(data);
+        } else if (data.type === "request_sync" && isAdmin) {
+          const state = getCurrentPlaybackState();
+          conn.send({ type: "action", action: state.paused ? "pause" : "play", time: state.time });
+        } else if (data.type === "heartbeat" && !isAdmin) {
+          const state = getCurrentPlaybackState();
+          if (Math.abs(state.time - data.time) > 1.6 || state.paused !== data.paused) {
+            applyRemotePlayback({ action: data.paused ? "pause" : "play", time: data.time });
           }
         } else if (data.type === "chat") {
           addChatMessage(data.sender, data.text, "other");
@@ -465,124 +718,174 @@
       });
 
       conn.on("close", () => {
-        connBadge.textContent = "Отключён";
-        connBadge.classList.remove("online");
-        addChatMessage("", "Партнёр вышел из комнаты", "sys");
+        connections.delete(conn.peer);
+        updateConnBadge();
+        addChatMessage("", "Участник вышел из комнаты", "sys");
       });
     }
 
     function initPeer() {
       if (peer) peer.destroy();
-      peer = isHost ? new Peer(currentRoomId) : new Peer();
+      peer = isAdmin ? new Peer(currentRoomId) : new Peer();
 
       peer.on("open", () => {
-        addChatMessage("", `Комната создана. Код: ${currentRoomId}`, "sys");
-        if (!isHost) {
+        if (!isAdmin) {
           setupConnection(peer.connect(currentRoomId));
         }
       });
 
       peer.on("error", (err) => {
-        if (err.type === "unavailable-id" && isHost) {
-          currentRoomId = "kino-" + Math.random().toString(36).substring(2, 8);
-          initPeer();
+        if (err.type === "unavailable-id" && isAdmin) {
+          // Если комната с таким ID уже висит в сети, подключаемся к ней
+          setupConnection(peer.connect(currentRoomId));
         } else if (err.type === "peer-unavailable") {
-          addChatMessage("", "Комната не найдена — проверь, открыта ли вкладка у создателя", "sys");
+          addChatMessage("", "Комната пока не активна — ждём, когда админ откроет страницу", "sys");
         }
       });
 
-      peer.on("connection", (incomingConn) => {
-        setupConnection(incomingConn);
-      });
+      peer.on("connection", (incomingConn) => setupConnection(incomingConn));
 
       peer.on("call", (call) => {
-        call.answer(localStream || undefined);
-        call.on("stream", (stream) => {
-          remoteAudio.srcObject = stream;
+        const callType = call.metadata?.type || "voice";
+        call.answer(callType === "voice" ? (voiceStream || undefined) : undefined);
+
+        call.on("stream", (remoteStream) => {
+          if (callType === "screen") {
+            switchPlayerMode("screen");
+            htmlPlayer.srcObject = remoteStream;
+            htmlPlayer.muted = false;
+            safeHtmlPlay();
+            addChatMessage("", "Получен стрим вкладки от админа", "sys");
+          } else {
+            remoteAudio.srcObject = remoteStream;
+          }
         });
       });
     }
 
     initPeer();
 
-    player.addEventListener("play", () => {
-      if (!isRemoteAction && conn?.open) conn.send({ type: "action", action: "play", time: player.currentTime });
-    });
-    player.addEventListener("pause", () => {
-      if (!isRemoteAction && conn?.open) conn.send({ type: "action", action: "pause", time: player.currentTime });
-    });
-    player.addEventListener("seeked", () => {
-      if (!isRemoteAction && conn?.open) conn.send({ type: "action", action: "seek", time: player.currentTime });
-    });
-
-    setInterval(() => {
-      if (isHost && conn?.open && !player.paused) {
-        conn.send({ type: "heartbeat", time: player.currentTime });
+    // === КНОПКИ АДМИНА И УПРАВЛЕНИЯ ===
+    loadBtn.onclick = () => {
+      if (!isAdmin && adminLocked) {
+        addChatMessage("", "Только админ может менять видео", "sys");
+        return;
       }
-    }, 5000);
+      const url = urlInput.value.trim();
+      if (!url) return;
+      loadSource(url, 0, false);
+      broadcast({ type: "load", url });
+      setupPanel.classList.add("hidden");
+    };
 
-    function sendMessage(customText = null) {
-      const text = (customText ?? chatInput.value).trim();
-      if (!text) return;
-      const sender = getMyName();
-      addChatMessage(sender, text, "me");
-      if (conn?.open) conn.send({ type: "chat", sender, text });
-      if (!customText) chatInput.value = "";
-    }
+    syncBtn.onclick = () => {
+      if (!isAdmin) return;
+      const state = getCurrentPlaybackState();
+      broadcast({
+        type: "sync_full",
+        url: currentRawUrl,
+        mode: activeMode,
+        time: state.time,
+        paused: state.paused,
+        adminLocked
+      });
+      addChatMessage("", "Команда синхронизации отправлена", "sys");
+    };
 
-    document.getElementById("sendBtn").onclick = () => sendMessage();
-    chatInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") sendMessage();
-    });
+    lockBtn.onclick = () => {
+      if (!isAdmin) return;
+      adminLocked = !adminLocked;
+      updateRoleUI();
+      broadcast({ type: "lock_state", adminLocked });
+    };
 
-    document.querySelectorAll(".react-btn").forEach((btn) => {
-      btn.onclick = () => sendMessage(btn.dataset.emoji);
-    });
+    // Стрим вкладки браузера / экрана
+    screenBtn.onclick = async () => {
+      if (screenStream) {
+        screenStream.getTracks().forEach(t => t.stop());
+        screenStream = null;
+        screenBtn.textContent = "🖥 Стрим вкладки";
+        screenBtn.classList.remove("active-red");
+        switchPlayerMode("html5");
+        addChatMessage("", "Трансляция вкладки остановлена", "sys");
+        return;
+      }
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: 30 },
+          audio: true
+        });
+        screenBtn.textContent = "⏹ Стоп стрим";
+        screenBtn.classList.add("active-red");
+        switchPlayerMode("screen");
+        htmlPlayer.srcObject = screenStream;
+        htmlPlayer.muted = true; // у себя отключаем звук превью, чтобы не двоилось
+        htmlPlayer.play();
+        addChatMessage("", "Трансляция вкладки запущена! Выбери вкладку с фильмом", "sys");
 
+        connections.forEach(c => {
+          if (c.open) peer.call(c.peer, screenStream, { metadata: { type: "screen" } });
+        });
+
+        screenStream.getVideoTracks()[0].onended = () => {
+          if (screenStream) screenBtn.click();
+        };
+      } catch (e) {
+        addChatMessage("", "Трансляция отменена или не поддерживается этим браузером", "sys");
+      }
+    };
+
+    // Голосовой чат
     micBtn.onclick = async () => {
-      if (localStream) {
-        localStream.getTracks().forEach((t) => t.stop());
-        localStream = null;
+      if (voiceStream) {
+        voiceStream.getTracks().forEach(t => t.stop());
+        voiceStream = null;
         micBtn.textContent = "🎙 Голос";
-        micBtn.classList.remove("mic-on");
+        micBtn.classList.remove("active-red");
         addChatMessage("", "Микрофон выключен", "sys");
         return;
       }
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         micBtn.textContent = "🔴 В эфире";
-        micBtn.classList.add("mic-on");
+        micBtn.classList.add("active-red");
         addChatMessage("", "Микрофон включён", "sys");
-        if (conn?.peer) {
-          const call = peer.call(conn.peer, localStream);
-          call.on("stream", (stream) => { remoteAudio.srcObject = stream; });
-        }
+        connections.forEach(c => {
+          if (c.open) peer.call(c.peer, voiceStream, { metadata: { type: "voice" } });
+        });
       } catch (e) {
         alert("Браузер не дал доступ к микрофону. Разреши доступ в настройках сайта.");
       }
     };
 
-    document.getElementById("toggleSetupBtn").onclick = () => {
-      setupPanel.classList.toggle("hidden");
-    };
+    // Чат
+    function sendMessage(customText = null) {
+      const text = (customText ?? chatInput.value).trim();
+      if (!text) return;
+      const sender = getMyName();
+      addChatMessage(sender, text, "me");
+      broadcast({ type: "chat", sender, text });
+      if (!customText) chatInput.value = "";
+    }
 
-    document.getElementById("loadBtn").onclick = () => {
-      const url = urlInput.value.trim();
-      if (!url) return;
-      loadVideo(url, 0, false);
-      if (conn?.open) conn.send({ type: "load", url });
-      setupPanel.classList.add("hidden");
-    };
+    document.getElementById("sendBtn").onclick = () => sendMessage();
+    chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+    document.querySelectorAll(".react-btn").forEach(btn => {
+      btn.onclick = () => sendMessage(btn.dataset.emoji);
+    });
+
+    // Настройки и приглашение
+    document.getElementById("toggleSetupBtn").onclick = () => setupPanel.classList.toggle("hidden");
 
     inviteBtn.onclick = async () => {
       const baseUrl = window.location.origin + window.location.pathname;
       const inviteLink = `${baseUrl}?room=${currentRoomId}`;
       try {
         await navigator.clipboard.writeText(inviteLink);
-        const origText = inviteBtn.textContent;
+        const orig = inviteBtn.textContent;
         inviteBtn.textContent = "✓ Скопировано!";
-        setTimeout(() => { inviteBtn.textContent = origText; }, 2200);
-      } catch (_) {
+        setTimeout(() => { inviteBtn.textContent = orig; }, 2200);
+      } catch {
         prompt("Скопируй ссылку для партнёра:", inviteLink);
       }
     };
@@ -592,7 +895,9 @@
       if (!raw) return;
       const match = raw.match(/room=([a-zA-Z0-9-]+)/);
       currentRoomId = match ? match[1] : raw;
-      isHost = false;
+      isAdmin = Boolean(ownedRooms[currentRoomId]);
+      window.history.replaceState({}, "", `?room=${currentRoomId}`);
+      updateRoleUI();
       initPeer();
       setupPanel.classList.add("hidden");
     };
