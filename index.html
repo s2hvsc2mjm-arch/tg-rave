@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Смотрим вместе</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #18181b);
+      --text: var(--tg-theme-text-color, #f4f4f5);
+      --hint: var(--tg-theme-hint-color, #a1a1aa);
+      --btn: var(--tg-theme-button-color, #3b82f6);
+      --btn-text: var(--tg-theme-button-text-color, #ffffff);
+      --card: var(--tg-theme-secondary-bg-color, #27272a);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    video { width: 100%; border-radius: 12px; background: #000; max-height: 55vh; }
+    .card { background: var(--card); padding: 12px; border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #3f3f46; background: var(--bg); color: var(--text); font-size: 14px; }
+    button { padding: 10px 14px; border-radius: 8px; border: none; background: var(--btn); color: var(--btn-text); font-weight: 600; cursor: pointer; font-size: 14px; }
+    button.secondary { background: #3f3f46; color: #fff; }
+    .status { font-size: 13px; color: var(--hint); display: flex; justify-content: space-between; align-items: center; }
+    .badge { padding: 3px 8px; border-radius: 99px; font-size: 12px; background: #3f3f46; }
+    .badge.online { background: #16a34a; color: #fff; }
+    #chatBox { height: 110px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 4px; padding: 6px; background: var(--bg); border-radius: 8px; }
+    .msg { padding: 4px 8px; border-radius: 6px; background: var(--card); align-self: flex-start; max-width: 85%; }
+    .msg.me { background: var(--btn); color: var(--btn-text); align-self: flex-end; }
+  </style>
+</head>
+<body>
+
+  <video id="player" controls playsinline webkit-playsinline></video>
+
+  <div class="card">
+    <div class="status">
+      <span id="roomLabel">Комната: создание...</span>
+      <span id="connBadge" class="badge">Ожидание партнёра</span>
+    </div>
+    <div class="row">
+      <button id="inviteBtn" style="flex:1;">Скопировать ссылку-приглашение</button>
+    </div>
+    <div class="row">
+      <input id="joinInput" placeholder="Или вставь код комнаты друга..." />
+      <button id="joinBtn" class="secondary">Войти</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input id="urlInput" placeholder="Ссылка на видео с Google Диска (.mp4)..." />
+      <button id="loadBtn">Включить</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="chatBox"></div>
+    <div class="row">
+      <input id="chatInput" placeholder="Написать сообщение..." />
+      <button id="sendBtn">→</button>
+    </div>
+  </div>
+
+  <script>
+    // === НАСТРОЙКИ (ЗАМЕНИ ЭТИ ДВЕ СТРОКИ) ===
+    const GOOGLE_API_KEY = "AIzaSyBcV_OlMU2CpZ1WO9n_bPF_j7CytgrZSuU";
+    const BOT_USERNAME = "lkefnslkfselfmefk_bot"; // без @, например: my_cinema_party_bot
+    const APP_SHORT_NAME = "watch"; // короткое имя из BotFather (/newapp)
+    // =========================================
+
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    const myName = tg.initDataUnsafe?.user?.first_name || "Я";
+    const startParam = tg.initDataUnsafe?.start_param || "";
+
+    const player = document.getElementById("player");
+    const roomLabel = document.getElementById("roomLabel");
+    const connBadge = document.getElementById("connBadge");
+    const urlInput = document.getElementById("urlInput");
+    const chatBox = document.getElementById("chatBox");
+
+    let peer = null;
+    let conn = null;
+    let isHost = !startParam;
+    let currentRoomId = startParam || ("tg-" + Math.random().toString(36).substring(2, 8));
+    let isRemoteAction = false;
+    let currentRawUrl = "";
+
+    function addChatMessage(sender, text, isMe = false) {
+      const div = document.createElement("div");
+      div.className = "msg" + (isMe ? " me" : "");
+      div.textContent = `${sender}: ${text}`;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function parseDriveUrl(input) {
+      const clean = input.trim();
+      const match = clean.match(/(?:\/d\/|id=)([a-zA-Z0-9_-]{25,})/);
+      if (match && match[1]) {
+        return `https://www.googleapis.com/drive/v3/files/${match[1]}?alt=media&key=${GOOGLE_API_KEY}`;
+      }
+      return clean;
+    }
+
+    function loadVideo(rawUrl, startTime = 0, shouldPlay = false) {
+      if (!rawUrl) return;
+      currentRawUrl = rawUrl;
+      urlInput.value = rawUrl;
+      const streamUrl = parseDriveUrl(rawUrl);
+      isRemoteAction = true;
+      player.src = streamUrl;
+      player.currentTime = startTime;
+      if (shouldPlay) player.play().catch(() => {});
+      setTimeout(() => { isRemoteAction = false; }, 500);
+    }
+
+    function setupConnection(connection) {
+      conn = connection;
+      conn.on("open", () => {
+        connBadge.textContent = "Вместе онлайн";
+        connBadge.classList.add("online");
+        addChatMessage("Система", "Вы подключились друг к другу!");
+        if (isHost && currentRawUrl) {
+          conn.send({
+            type: "sync_full",
+            url: currentRawUrl,
+            time: player.currentTime,
+            paused: player.paused
+          });
+        }
+      });
+
+      conn.on("data", (data) => {
+        if (data.type === "load") {
+          loadVideo(data.url, 0, false);
+        } else if (data.type === "sync_full") {
+          loadVideo(data.url, data.time, !data.paused);
+        } else if (data.type === "action") {
+          isRemoteAction = true;
+          if (Math.abs(player.currentTime - data.time) > 0.7) {
+            player.currentTime = data.time;
+          }
+          if (data.action === "play") player.play().catch(() => {});
+          if (data.action === "pause") player.pause();
+          setTimeout(() => { isRemoteAction = false; }, 400);
+        } else if (data.type === "heartbeat") {
+          if (!player.paused && Math.abs(player.currentTime - data.time) > 1.5) {
+            isRemoteAction = true;
+            player.currentTime = data.time;
+            setTimeout(() => { isRemoteAction = false; }, 400);
+          }
+        } else if (data.type === "chat") {
+          addChatMessage(data.sender, data.text, false);
+        }
+      });
+
+      conn.on("close", () => {
+        connBadge.textContent = "Отключён";
+        connBadge.classList.remove("online");
+      });
+    }
+
+    function initPeer() {
+      if (peer) peer.destroy();
+      if (isHost) {
+        peer = new Peer(currentRoomId);
+        peer.on("open", (id) => {
+          roomLabel.textContent = `Комната: ${id}`;
+        });
+        peer.on("connection", (incomingConn) => {
+          setupConnection(incomingConn);
+        });
+      } else {
+        peer = new Peer();
+        peer.on("open", () => {
+          roomLabel.textContent = `Комната: ${currentRoomId}`;
+          const outConn = peer.connect(currentRoomId);
+          setupConnection(outConn);
+        });
+      }
+    }
+
+    initPeer();
+
+    // События плеера
+    player.addEventListener("play", () => {
+      if (!isRemoteAction && conn?.open) {
+        conn.send({ type: "action", action: "play", time: player.currentTime });
+      }
+    });
+    player.addEventListener("pause", () => {
+      if (!isRemoteAction && conn?.open) {
+        conn.send({ type: "action", action: "pause", time: player.currentTime });
+      }
+    });
+    player.addEventListener("seeked", () => {
+      if (!isRemoteAction && conn?.open) {
+        conn.send({ type: "action", action: "seek", time: player.currentTime });
+      }
+    });
+
+    // Подстраховка от рассинхрона каждые 5 секунд
+    setInterval(() => {
+      if (isHost && conn?.open && !player.paused) {
+        conn.send({ type: "heartbeat", time: player.currentTime });
+      }
+    }, 5000);
+
+    // Кнопки управления
+    document.getElementById("loadBtn").onclick = () => {
+      const url = urlInput.value.trim();
+      if (!url) return;
+      loadVideo(url, 0, false);
+      if (conn?.open) conn.send({ type: "load", url });
+    };
+
+    document.getElementById("inviteBtn").onclick = () => {
+      const inviteLink = `https://t.me/${BOT_USERNAME}/${APP_SHORT_NAME}?startapp=${currentRoomId}`;
+      navigator.clipboard.writeText(inviteLink);
+      tg.showAlert(`Ссылка скопирована! Отправь её девушке в чат:\n\n${inviteLink}`);
+    };
+
+    document.getElementById("joinBtn").onclick = () => {
+      const code = document.getElementById("joinInput").value.trim();
+      if (!code) return;
+      isHost = false;
+      currentRoomId = code;
+      initPeer();
+    };
+
+    document.getElementById("sendBtn").onclick = () => {
+      const input = document.getElementById("chatInput");
+      const text = input.value.trim();
+      if (!text) return;
+      addChatMessage(myName, text, true);
+      if (conn?.open) conn.send({ type: "chat", sender: myName, text });
+      input.value = "";
+    };
+  </script>
+</body>
+</html>
